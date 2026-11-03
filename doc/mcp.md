@@ -6,6 +6,8 @@ The D1 Worker supports immediate notifications, one-time reminders, listing, and
 
 Use `https://YOUR_HOST/mcp/DEVICE_KEY` for a fixed device, or `https://YOUR_HOST/mcp` and provide `device_key` in every tool call. Include any configured `ROOT_PATH` prefix and Basic Authorization header when `BASIC_AUTH` is enabled.
 
+GET keeps an SSE connection open with comment heartbeats every 25 seconds. Heartbeats do not create new HTTP requests, query tasks, or send Bark notifications. Tool calls use POST, and reminders still run through Durable Object Alarms.
+
 | Tool | Purpose | Main arguments |
 | --- | --- | --- |
 | `notify` | Send now or schedule | Message fields, `user_requested: true`, optional `send_at` |

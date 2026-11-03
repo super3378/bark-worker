@@ -11,7 +11,7 @@ test('Cloudflare runtime: MCP sessions, SQLite Durable Objects, alarms, isolatio
     const pushes = []
     const options = convertV4MiniflareOptions({
         name: 'bark-test',
-        modules: ['main.js', 'mcp-tools.js', 'reminders.js'].map(path => ({ type: 'ESModule', path: resolve(path) })),
+        modules: ['main.js', 'mcp-tools.js', 'reminders.js', 'mcp-stream.js'].map(path => ({ type: 'ESModule', path: resolve(path) })),
         compatibilityDate: '2026-03-01',
         compatibilityFlags: ['nodejs_compat'],
         d1Databases: ['database'],
@@ -53,18 +53,35 @@ test('Cloudflare runtime: MCP sessions, SQLite Durable Objects, alarms, isolatio
     let sessionA = await connect('/mcp/DeviceA')
     const sessionB = await connect('/mcp/DeviceB')
 
-    await t.test('unsupported MCP stream requests return 405 without affecting POST tools', async () => {
+    await t.test('unsupported MCP methods return 405 without affecting POST tools', async () => {
         for (const path of ['/mcp', '/mcp/DeviceA']) {
-            for (const method of ['GET', 'PUT', 'HEAD']) {
+            for (const method of ['PUT', 'HEAD']) {
                 const response = await mf.dispatchFetch('https://bark.test' + path, {
                     method, headers: { accept: 'text/event-stream', 'mcp-session-id': sessionA },
                 })
                 assert.equal(response.status, 405)
-                assert.equal(response.headers.get('allow'), 'POST, DELETE')
+                assert.equal(response.headers.get('allow'), 'GET, POST, DELETE')
                 await response.arrayBuffer()
             }
         }
         assert.equal((await list(sessionA)).total, 0)
+        assert.equal(pushes.length, 0)
+    })
+
+    await t.test('GET keeps a private comment-only SSE connection open without sending notifications', async () => {
+        for (const path of ['/mcp', '/mcp/DeviceA']) {
+            const response = await mf.dispatchFetch('https://bark.test' + path, { headers: { accept: 'text/event-stream' } })
+            assert.equal(response.status, 200)
+            assert.equal(response.headers.get('content-type'), 'text/event-stream')
+            const reader = response.body.getReader()
+            const first = new TextDecoder().decode((await reader.read()).value)
+            assert.match(first, /retry: 60000/)
+            assert.ok(!first.includes('DeviceA'))
+            const endedEarly = await Promise.race([reader.read().then(() => true), delay(100).then(() => false)])
+            assert.equal(endedEarly, false)
+            assert.equal((await list(sessionA)).total, 0)
+            await reader.cancel()
+        }
         assert.equal(pushes.length, 0)
     })
 

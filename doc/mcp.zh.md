@@ -13,6 +13,8 @@ https://你的域名/mcp
 
 第一种固定设备；第二种需要在每次工具调用中填写 `device_key`。如果设置了 `ROOT_PATH`，地址前还需加上对应路径；设置了 `BASIC_AUTH` 时需提供相应 Basic 请求头。
 
+GET 提供持续的 SSE 连接，每 25 秒发送一次注释心跳；心跳不会创建新 HTTP 请求、查询任务或发送 Bark 通知。实际工具调用使用 POST，提醒仍由 Durable Object Alarm 触发。
+
 ## 工具
 
 | 工具 | 用途 | 主要参数 |

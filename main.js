@@ -1,5 +1,6 @@
 import { callMcpTool, listMcpTools, ToolInputError } from './mcp-tools.js'
 import { ReminderQueue } from './reminders.js'
+import { createMcpEventStream } from './mcp-stream.js'
 
 export default {
     async fetch(request, env, ctx) {
@@ -551,6 +552,8 @@ class Handler {
         }
 
         this.mcp = async (request, deviceKey) => {
+            if (request.method === 'GET') return createMcpEventStream(request)
+
             if (request.method === 'DELETE') {
                 const sessionId = request.headers.get('mcp-session-id')
                 if (sessionId) {
@@ -562,13 +565,11 @@ class Handler {
             }
 
             if (request.method !== 'POST') {
-                // No standalone SSE stream is provided. MCP clients must receive
-                // 405 so they stop reconnecting instead of treating this as a stream.
                 return new Response('Method not allowed', {
                     status: 405,
                     headers: {
                         'content-type': 'text/plain; charset=utf-8',
-                        'allow': 'POST, DELETE',
+                        'allow': 'GET, POST, DELETE',
                     }
                 })
             }
