@@ -651,7 +651,7 @@ class Handler {
                     
                     if (!session) {
                         return new Response(null, {
-                            status: 400
+                            status: sessionId ? 404 : 400
                         })
                     }
                     
@@ -667,7 +667,7 @@ class Handler {
                     
                     if (!session) {
                         return new Response('Invalid session ID', {
-                            status: 400,
+                            status: sessionId ? 404 : 400,
                             headers: {
                                 'content-type': 'text/plain',
                             }
@@ -682,7 +682,8 @@ class Handler {
                 case 'tools/call': {
                     const sessionId = request.headers.get('mcp-session-id')
                     const session = await db.sessionBySessionID(sessionId)
-                    if (!session || (deviceKey && deviceKey !== session.device_key)) return new Response('Invalid session ID', { status: 400 })
+                    if (!session) return new Response('Invalid session ID', { status: sessionId ? 404 : 400 })
+                    if (deviceKey && deviceKey !== session.device_key) return new Response('Invalid session ID', { status: 400 })
                     await db.saveSessionBySessionID(session.id, session.device_key, true, undefined)
                     const { name, arguments: args = {} } = params || {}
                     if (!listMcpTools(session.device_key).some(tool => tool.name === name)) {

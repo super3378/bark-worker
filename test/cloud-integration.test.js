@@ -53,6 +53,21 @@ test('Cloudflare runtime: MCP sessions, SQLite Durable Objects, alarms, isolatio
     let sessionA = await connect('/mcp/DeviceA')
     const sessionB = await connect('/mcp/DeviceB')
 
+    await t.test('expired session IDs return 404 so clients can reinitialize; missing IDs return 400', async () => {
+        for (const method of ['notifications/initialized', 'tools/list', 'tools/call']) {
+            for (const stale of [false, true]) {
+                const response = await mf.dispatchFetch('https://bark.test/mcp/DeviceA', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json', ...(stale ? { 'mcp-session-id': 'expired-session' } : {}) },
+                    body: JSON.stringify({ jsonrpc: '2.0', id: ++requestId, method, params: { name: 'notify', arguments: { user_requested: true, body: 'must not send' } } }),
+                })
+                assert.equal(response.status, stale ? 404 : 400)
+                await response.arrayBuffer()
+            }
+        }
+        assert.equal(pushes.length, 0)
+    })
+
     await t.test('unsupported MCP methods return 405 without affecting POST tools', async () => {
         for (const path of ['/mcp', '/mcp/DeviceA']) {
             for (const method of ['PUT', 'HEAD']) {
