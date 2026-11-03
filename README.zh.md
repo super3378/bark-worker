@@ -37,6 +37,7 @@ Bark-Worker 是一个 [Bark-Server](https://github.com/Finb/bark-server) 在 Clo
     - `info`
     - `push`
 - 基于路径的参数解析
+- 云端 MCP：立即发送、定时提醒、查看和取消任务（D1 版），见 [MCP 使用说明](doc/mcp.zh.md)
 - 便于部署, 低成本且方便管理
 
 ## 部署
@@ -52,7 +53,7 @@ Bark-Worker 是一个 [Bark-Server](https://github.com/Finb/bark-server) 在 Clo
 > [!NOTE]
 > Cloudflare API Token必须有D1权限
 
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cwxiaos/bark-worker)
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/super3378/bark-worker)
 
 ### 或手动部署
 

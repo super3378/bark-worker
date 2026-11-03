@@ -37,6 +37,7 @@ Bark-Worker is a [Bark-Server](https://github.com/Finb/bark-server) implenmentio
     - `info`
     - `push`
 - Path based parameters resolve
+- Cloud MCP with immediate/scheduled notifications, task listing and cancellation (D1 version). See [MCP guide](doc/mcp.md).
 - Easy to deploy, Cheap to use and Convenient to manage
 
 ## Setup
@@ -52,7 +53,7 @@ Bark-Worker is a [Bark-Server](https://github.com/Finb/bark-server) implenmentio
 > [!NOTE]
 > The Cloudflare API Token must have D1 permission.
 
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cwxiaos/bark-worker)
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/super3378/bark-worker)
 
 ### Or manually deploy
 

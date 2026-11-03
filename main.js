@@ -1,3 +1,6 @@
+import { callMcpTool, listMcpTools, ToolInputError } from './mcp-tools.js'
+import { ReminderQueue } from './reminders.js'
+
 export default {
     async fetch(request, env, ctx) {
         return await handleRequest(request, env, ctx)
@@ -14,7 +17,7 @@ async function handleRequest(request, env, ctx) {
     ctx.waitUntil(db.cleanupExpiredSessions())
 
     const { searchParams, pathname } = new URL(request.url)
-    const handler = new Handler(db, { allowNewDevice, allowQueryNums })
+    const handler = new Handler(db, { allowNewDevice, allowQueryNums, reminders: env.REMINDERS, apns: env })
     const realPathname = pathname.replace((new RegExp('^' + rootPath.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&'))), '/')
 
     switch (realPathname) {
@@ -266,7 +269,7 @@ async function handleRequest(request, env, ctx) {
 
 class Handler {
     constructor(db, options) {
-        this.version = 'v2.3.4'
+        this.version = 'v2.3.4-reminders.1'
         this.build = '2026-09-12 17:45:41'
         this.arch = 'js'
         this.commit = '3db0918856d5aca4d141300c84d5c7a9f851ba44'
@@ -379,7 +382,7 @@ class Handler {
             })
         }
 
-        this.push = async (parameters) => {
+        this.push = async (parameters, { timeoutMs } = {}) => {
             const deviceToken = await db.deviceTokenByKey(parameters.device_key)
 
             if (deviceToken === undefined) {
@@ -506,8 +509,8 @@ class Handler {
                 'apns-push-type': (_delete) ? 'background' : 'alert',
             }
 
-            const apns = new APNs(db)
-            const response = await apns.push(deviceToken, headers, aps)
+            const apns = new APNs(db, options.apns)
+            const response = await apns.push(deviceToken, headers, aps, timeoutMs)
 
             if (response.status === 200) {
                 return new Response(JSON.stringify({
@@ -635,6 +638,7 @@ class Handler {
                                 name: deviceKey ? 'Bark MCP Server (Specific)' : 'Bark MCP Server',
                                 version: this.version,
                             },
+                            'instructions': 'Send, schedule, and cancel notifications ONLY when the user explicitly requests it. Do not notify merely because work completed or failed. Never automatically retry an unknown send outcome. Display scheduled times in the user\'s timezone.',
                         }
                     }), {
                         status: 200,
@@ -675,161 +679,24 @@ class Handler {
 
                     await db.saveSessionBySessionID(session.id, session.device_key, true, undefined)
 
-                    const sessionDeviceKey = session.device_key
-                    const required = sessionDeviceKey ? [] : ['device_key']
-
-                    const properties = {
-                        'title':        { 'type': 'string', 'description': 'Notification title' },
-                        'subtitle':     { 'type': 'string', 'description': 'Notification subtitle' },
-                        'body':         { 'type': 'string', 'description': 'Notification content' },
-                        'markdown':     { 'type': 'string', 'description': 'Markdown content, overrides body' },
-                        'level':        { 'type': 'string', 'description': 'Notification level', 'enum': ['critical', 'active', 'timeSensitive', 'passive'] },
-                        'volume':       { 'type': 'number', 'description': 'Alert volume (0–10)', 'minimum': 0, 'maximum': 10, 'default': 5 },
-                        'badge':        { 'type': 'number', 'description': 'Badge number' },
-                        'call':         { 'type': 'string', 'description': "Set to '1' to repeat ringtone" },
-                        'sound':        { 'type': 'string', 'description': 'Notification sound name' },
-                        'icon':         { 'type': 'string', 'description': 'Notification icon URL' },
-                        'image':        { 'type': 'string', 'description': 'Notification image URL' },
-                        'group':        { 'type': 'string', 'description': 'Notification group' },
-                        'isArchive':    { 'type': 'string', 'description': "Set to '1' to archive, other value to skip" },
-                        'ttl':          { 'type': 'number', 'description': 'Time to live in seconds for archived messages; expired items are automatically deleted' },
-                        'url':          { 'type': 'string', 'description': 'Click action URL' },
-                        'copy':         { 'type': 'string', 'description': 'Text to copy on copy action' },
-                        'device_key': sessionDeviceKey ? undefined : { 'type': 'string', 'description': 'Device key' },
-                    }
-
-                    return new Response(JSON.stringify({
-                        'jsonrpc': '2.0',
-                        'id': id,
-                        'result': {
-                            'tools': [
-                                {   
-                                    'annotations': {
-                                        'readOnlyHint': false,
-                                        'destructiveHint': true,
-                                        'idempotentHint': false,
-                                        'openWorldHint': true
-                                    },
-                                    'name': 'notify',
-                                    'description': 'Send a notification to a device via Bark',
-                                    'inputSchema': {
-                                        'type': 'object',
-                                        'properties': properties,
-                                        ...(required.length > 0 ? { required } : {})
-                                    },
-                                },
-                            ]
-                        }
-                    }), {
-                        status: 200,
-                        headers: {
-                            'content-type': 'application/json',
-                        }
-                    })
+                    if (deviceKey && deviceKey !== session.device_key) return new Response('Session belongs to another device', { status: 400 })
+                    return Response.json({ jsonrpc: '2.0', id, result: { tools: listMcpTools(session.device_key) } })
                 }
                 case 'tools/call': {
                     const sessionId = request.headers.get('mcp-session-id')
                     const session = await db.sessionBySessionID(sessionId)
-                    
-                    if (!session) {
-                        return new Response('Invalid session ID', {
-                            status: 400,
-                            headers: {
-                                'content-type': 'text/plain',
-                            }
-                        })
-                    }
-
+                    if (!session || (deviceKey && deviceKey !== session.device_key)) return new Response('Invalid session ID', { status: 400 })
                     await db.saveSessionBySessionID(session.id, session.device_key, true, undefined)
-
                     const { name, arguments: args = {} } = params || {}
-
-                    if (name !== 'notify') {
-                        return new Response(JSON.stringify({
-                            'jsonrpc': '2.0',
-                            'id': id,
-                            'error': {
-                                'code': -32602,
-                                'message': `tool '${name}' not found: tool not found`,
-                            }
-                        }), {
-                            status: 200,
-                            headers: {
-                                'content-type': 'application/json',
-                            }
-                        })
+                    if (!listMcpTools(session.device_key).some(tool => tool.name === name)) {
+                        return Response.json({ jsonrpc: '2.0', id, error: { code: -32602, message: 'Tool not found' } })
                     }
-
-                    const _deviceKey = session.device_key || args.device_key || ''
-                    if (!_deviceKey) {
-                        return new Response(JSON.stringify({
-                            'jsonrpc': '2.0',
-                            'id': id,
-                            'result': {
-                                'content': [
-                                    {
-                                        'type': 'text',
-                                        'text': 'device_key is required',
-                                    }
-                                ],
-                                'isError': true,
-                            }
-                        }), {
-                            status: 200,
-                            headers: {
-                                'content-type': 'application/json',
-                            }
-                        })
-                    }
-                    
-                    const parameters = { ...args, 'device_key': _deviceKey }
-                    const pushParams = Object.keys(parameters).reduce((obj, key) => {
-                        obj[key.toLowerCase()] = parameters[key]
-                        return obj
-                    }, {})
-
-                    const response = await this.push(pushParams)
-                    const responseBody = await response.json()
-
-                    if (response.status === 200) {
-                        return new Response(JSON.stringify({
-                            'jsonrpc': '2.0',
-                            'id': id,
-                            'result': {
-                                'content': [
-                                    {
-                                        'type': 'text',
-                                        'text': 'Notification sent successfully',
-                                    }
-                                ]
-                            }
-                        }), {
-                            status: 200,
-                            headers: {
-                                'content-type': 'application/json',
-                            }
-                        })
-                    }
-
-                    return new Response(JSON.stringify({
-                        'jsonrpc': '2.0',
-                        'id': id,
-                        'result': {
-                            'content': [
-                                {
-                                    'type': 'text',
-                                    'text': `Failed to send notification: ${responseBody.message}`,
-                                }
-                            ],
-                            'isError': true,
-                        }
-                    }), {
-                        status: 200,
-                        headers: {
-                            'content-type': 'application/json',
-                        }
+                    const result = await callMcpTool(name, args, session.device_key, {
+                        database: db,
+                        reminders: options.reminders,
+                        push: parameters => this.push(parameters, { timeoutMs: 15000 }),
                     })
-
+                    return Response.json({ jsonrpc: '2.0', id, result })
                 }
                 default: {
                     return new Response(JSON.stringify({
@@ -852,34 +719,28 @@ class Handler {
 }
 
 class APNs {
-    constructor(db) {
+    constructor(db, credentials = {}) {
         const generateAuthToken = async () => {
-            const TOKEN_KEY = `
-            -----BEGIN PRIVATE KEY-----
-            MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBHkwdwIBAQQg4vtC3g5L5HgKGJ2+
-            T1eA0tOivREvEAY2g+juRXJkYL2gCgYIKoZIzj0DAQehRANCAASmOs3JkSyoGEWZ
-            sUGxFs/4pw1rIlSV2IC19M8u3G5kq36upOwyFWj9Gi3Ejc9d3sC7+SHRqXrEAJow
-            8/7tRpV+
-            -----END PRIVATE KEY-----
-            `
+            const TOKEN_KEY = credentials.APNS_PRIVATE_KEY
+            const TEAM_ID = credentials.APNS_TEAM_ID
+            const AUTH_KEY_ID = credentials.APNS_KEY_ID
+            if (!TOKEN_KEY || !TEAM_ID || !AUTH_KEY_ID) throw new Error('Configure APNS_PRIVATE_KEY, APNS_TEAM_ID, and APNS_KEY_ID as Worker secrets')
 
             // Parse private key
             const privateKeyPEM = TOKEN_KEY.replace('-----BEGIN PRIVATE KEY-----', '').replace('-----END PRIVATE KEY-----', '').replace(/\s/g, '')
             // Decode private key
             const privateKeyArrayBuffer = util.base64ToArrayBuffer(privateKeyPEM)
             const privateKey = await crypto.subtle.importKey('pkcs8', privateKeyArrayBuffer, { name: 'ECDSA', namedCurve: 'P-256', }, false, ['sign'])
-            const TEAM_ID = '5U8LBRXG3A'
-            const AUTH_KEY_ID = 'LH4T9V5U4R'
             // Generate the JWT token
             const JWT_ISSUE_TIME = util.getTimestamp()
-            const JWT_HEADER = btoa(JSON.stringify({ alg: 'ES256', kid: AUTH_KEY_ID })).replace('+', '-').replace('/', '_').replace(/=+$/, '')
-            const JWT_CLAIMS = btoa(JSON.stringify({ iss: TEAM_ID, iat: JWT_ISSUE_TIME })).replace('+', '-').replace('/', '_').replace(/=+$/, '')
+            const JWT_HEADER = btoa(JSON.stringify({ alg: 'ES256', kid: AUTH_KEY_ID })).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')
+            const JWT_CLAIMS = btoa(JSON.stringify({ iss: TEAM_ID, iat: JWT_ISSUE_TIME })).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')
             const JWT_HEADER_CLAIMS = JWT_HEADER + '.' + JWT_CLAIMS
             // Sign
             const jwtArray = new TextEncoder().encode(JWT_HEADER_CLAIMS)
             const signature = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, privateKey, jwtArray)
             const signatureArray = new Uint8Array(signature)
-            const JWT_SIGNED_HEADER_CLAIMS = btoa(String.fromCharCode(...signatureArray)).replace('+', '-').replace('/', '_').replace(/=+$/, '')
+            const JWT_SIGNED_HEADER_CLAIMS = btoa(String.fromCharCode(...signatureArray)).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')
             const AUTHENTICATION_TOKEN = JWT_HEADER_CLAIMS + '.' + JWT_SIGNED_HEADER_CLAIMS
 
             return AUTHENTICATION_TOKEN
@@ -898,7 +759,7 @@ class APNs {
             return authToken
         }
 
-        this.push = async (deviceToken, headers, aps) => {
+        this.push = async (deviceToken, headers, aps, timeoutMs) => {
             const TOPIC = 'me.fin.bark'
             const APNS_HOST_NAME = 'api.push.apple.com'
             const AUTHENTICATION_TOKEN = await getAuthToken()
@@ -916,6 +777,7 @@ class APNs {
                     'content-type': 'application/json',
                 })),
                 body: JSON.stringify(aps),
+                signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
             })
         }
     }
@@ -1146,3 +1008,31 @@ class Util {
 }
 
 const util = new Util()
+
+
+// Called only through the Worker binding; this is not an extra public HTTP route.
+export class ReminderScheduler {
+    constructor(ctx, env) {
+        const handler = new Handler(new Database(env), { apns: env })
+        this.queue = new ReminderQueue(ctx.storage, parameters => handler.push(parameters, { timeoutMs: 15000 }))
+        this.ready = ctx.blockConcurrencyWhile(async () => this.queue.initialize())
+    }
+
+    async fetch(request) {
+        await this.ready
+        try {
+            const args = await request.json()
+            if (args.operation === 'notify') return Response.json(await this.queue.schedule(args.device_key, args.parameters, args.send_at))
+            if (args.operation === 'list_scheduled_notifications') return Response.json(this.queue.list(args))
+            if (args.operation === 'cancel_scheduled_notification') return Response.json(await this.queue.cancel(args.task_id))
+            return Response.json({ error: 'Unknown reminder operation' }, { status: 400 })
+        } catch (error) {
+            return Response.json({ error: error instanceof ToolInputError ? error.message : 'Reminder operation failed' }, { status: 400 })
+        }
+    }
+
+    async alarm() {
+        await this.ready
+        await this.queue.runDue()
+    }
+}

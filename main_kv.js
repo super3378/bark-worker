@@ -12,7 +12,7 @@ async function handleRequest(request, env, ctx) {
 
     const db = new Database(env)
     const {searchParams, pathname} = new URL(request.url)
-    const handler = new Handler(db, { allowNewDevice, allowQueryNums })
+    const handler = new Handler(db, { allowNewDevice, allowQueryNums, apns: env })
     const realPathname = pathname.replace((new RegExp('^' + rootPath.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&'))), '/')
 
     switch (realPathname) {
@@ -488,7 +488,7 @@ class Handler {
                 'apns-push-type': (_delete) ? 'background' : 'alert',
             }
 
-            const apns = new APNs(db)
+            const apns = new APNs(db, options.apns)
             const response = await apns.push(deviceToken, headers, aps)
 
             if (response.status === 200) {
@@ -532,34 +532,28 @@ class Handler {
 }
 
 class APNs {
-    constructor(db) {
+    constructor(db, credentials = {}) {
         const generateAuthToken = async () => {
-            const TOKEN_KEY = `
-            -----BEGIN PRIVATE KEY-----
-            MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBHkwdwIBAQQg4vtC3g5L5HgKGJ2+
-            T1eA0tOivREvEAY2g+juRXJkYL2gCgYIKoZIzj0DAQehRANCAASmOs3JkSyoGEWZ
-            sUGxFs/4pw1rIlSV2IC19M8u3G5kq36upOwyFWj9Gi3Ejc9d3sC7+SHRqXrEAJow
-            8/7tRpV+
-            -----END PRIVATE KEY-----
-            `
+            const TOKEN_KEY = credentials.APNS_PRIVATE_KEY
+            const TEAM_ID = credentials.APNS_TEAM_ID
+            const AUTH_KEY_ID = credentials.APNS_KEY_ID
+            if (!TOKEN_KEY || !TEAM_ID || !AUTH_KEY_ID) throw new Error('Configure APNS_PRIVATE_KEY, APNS_TEAM_ID, and APNS_KEY_ID as Worker secrets')
 
             // Parse private key
             const privateKeyPEM = TOKEN_KEY.replace('-----BEGIN PRIVATE KEY-----', '').replace('-----END PRIVATE KEY-----', '').replace(/\s/g, '')
             // Decode private key
             const privateKeyArrayBuffer = util.base64ToArrayBuffer(privateKeyPEM)
             const privateKey = await crypto.subtle.importKey('pkcs8', privateKeyArrayBuffer, { name: 'ECDSA', namedCurve: 'P-256', }, false, ['sign'])
-            const TEAM_ID = '5U8LBRXG3A'
-            const AUTH_KEY_ID = 'LH4T9V5U4R'
             // Generate the JWT token
             const JWT_ISSUE_TIME = util.getTimestamp()
-            const JWT_HEADER = btoa(JSON.stringify({ alg: 'ES256', kid: AUTH_KEY_ID })).replace('+', '-').replace('/', '_').replace(/=+$/, '')
-            const JWT_CLAIMS = btoa(JSON.stringify({ iss: TEAM_ID, iat: JWT_ISSUE_TIME })).replace('+', '-').replace('/', '_').replace(/=+$/, '')
+            const JWT_HEADER = btoa(JSON.stringify({ alg: 'ES256', kid: AUTH_KEY_ID })).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')
+            const JWT_CLAIMS = btoa(JSON.stringify({ iss: TEAM_ID, iat: JWT_ISSUE_TIME })).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')
             const JWT_HEADER_CLAIMS = JWT_HEADER + '.' + JWT_CLAIMS
             // Sign
             const jwtArray = new TextEncoder().encode(JWT_HEADER_CLAIMS)
             const signature = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, privateKey, jwtArray)
             const signatureArray = new Uint8Array(signature)
-            const JWT_SIGNED_HEADER_CLAIMS = btoa(String.fromCharCode(...signatureArray)).replace('+', '-').replace('/', '_').replace(/=+$/, '')
+            const JWT_SIGNED_HEADER_CLAIMS = btoa(String.fromCharCode(...signatureArray)).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')
             const AUTHENTICATION_TOKEN = JWT_HEADER_CLAIMS + '.' + JWT_SIGNED_HEADER_CLAIMS
 
             return AUTHENTICATION_TOKEN
