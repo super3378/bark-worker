@@ -6,22 +6,9 @@
 
 **[English](README.md)** | 中文文档
 
-<!-- > [!CAUTION]
-> Cloudflare Dashboard 目前(2024-07-27)存在Bug, 部署和变量编辑不可用, 在Cloudflare修复该问题之前请勿进行任何操作, 如果需要部署请使用wrangler. -->
+Bark-Worker 是部署在 Cloudflare Workers 上的 [Bark](https://github.com/Finb/Bark) 推送服务端，可通过 HTTP API 或 MCP 向 iPhone 发送通知，无需额外购买服务器。
 
-<!-- > [!NOTE]
-> Device token可能发生变化, 之前使用多Key或Key别名的方法可能会失效, 如有多Key使用需要参考[Tips](doc/tips.zh.md). -->
-
-> [!NOTE]
-> KV版本由于数据库配额较低, 可能不会添加MCP支持, 但如果MCP的代码能够优化到一定程度, 可能会有MCP支持.
-
-> [!NOTE]
-> 批量推送有最高优先级, 如果指定了`device_keys`且不为空, `device_key`将被忽略.
-
-<!-- > [!CAUTION]
-> 对于D1 Alpha用户： 在2024-08-01之后， D1 Alpha数据库将停止接受SQL查询，需要使用新的D1数据库，参考[迁移指南](https://developers.cloudflare.com/d1/platform/alpha-migration/) -->
-
-Bark-Worker 是一个 [Bark-Server](https://github.com/Finb/bark-server) 在 Cloudflare Worker 上的实现. 为隐私敏感的用户提供一个低成本且保证隐私的服务端.
+本仓库基于 [cwxiaos/bark-worker](https://github.com/cwxiaos/bark-worker) 修改，保留原项目的 Bark 推送 API 和云端 MCP，并扩展了一次性定时提醒、任务查询与取消功能。感谢原作者及 [Bark-Server](https://github.com/Finb/bark-server) 项目的贡献，沿用 [GPL-3.0 许可证](LICENSE)。
 
 ### 什么是 [Bark](https://github.com/Finb/Bark)?
 [Bark](https://github.com/Finb/Bark) 是一个允许向iPhone发送通知的iOS APP.
@@ -30,6 +17,7 @@ Bark-Worker 是一个 [Bark-Server](https://github.com/Finb/bark-server) 在 Clo
 > 如果worker.dev域名在当前国家/地区不可用，则需要一个自己的域名
 
 ## 特性
+
 - 支持所有的Bark-Server API
     - `register`
     - `ping`
@@ -37,16 +25,16 @@ Bark-Worker 是一个 [Bark-Server](https://github.com/Finb/bark-server) 在 Clo
     - `info`
     - `push`
 - 基于路径的参数解析
-- 云端 MCP：立即发送、定时提醒、查看和取消任务（D1 版），见 [MCP 使用说明](doc/mcp.zh.md)
+- 云端 MCP（D1 版）：`notify` 立即发送或安排提醒，`list_scheduled_notifications` 查看任务，`cancel_scheduled_notification` 取消待发送任务
+- 定时任务保存在 SQLite Durable Objects 中，由 Alarm 到点触发；创建成功后，电脑关机或 MCP 客户端断开仍可执行
 - 便于部署, 低成本且方便管理
+
+MCP 连接方式、工具参数和任务执行规则见 [MCP 使用说明](doc/mcp.zh.md)。目前支持一次性提醒，暂不支持周期重复；发送和取消操作需由用户明确要求。
 
 ## 部署
 
 > [!NOTE]
-> 从D1版本和KV版本中选择一个. 更推荐D1版本, D1版本的额度更高.
-
-<!-- > [!CAUTION]
-> 当Cloudfalre D1不再Beta后, KV版本的Database部分可能停止维护. -->
+> 使用云端 MCP 和定时提醒请选择 D1 版：D1 保存设备注册和 MCP 会话，Durable Objects 保存并调度提醒。KV 版仅提供 Bark HTTP 推送 API。
 
 ### 直接部署D1版本
 
@@ -54,6 +42,8 @@ Bark-Worker 是一个 [Bark-Server](https://github.com/Finb/bark-server) 在 Clo
 > Cloudflare API Token必须有D1权限
 
 [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/super3378/bark-worker)
+
+部署时需配置 `APNS_PRIVATE_KEY`、`APNS_TEAM_ID`、`APNS_KEY_ID` 三个 Worker Secrets，详见 [MCP 部署说明](doc/mcp.zh.md#部署与验证)。它们是 APNs 服务端凭据，与 Bark 设备 Key 不同。
 
 ### 或手动部署
 
@@ -69,6 +59,7 @@ Bark-Worker 是一个 [Bark-Server](https://github.com/Finb/bark-server) 在 Clo
 
 ## Tips
 
+- 批量推送中，`device_keys` 非空时优先于 `device_key`
 - 一个设备使用多个Key
 - 设备Key别名
 - D1数据库Console管理

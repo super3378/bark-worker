@@ -6,22 +6,9 @@
 
 English | **[中文文档](README.zh.md)**
 
-<!-- > [!CAUTION]
-> There are bugs in Cloudflare Dashboard for now(2024-07-27), deploy and variables edit are not available, DONOT change anything before Cloudflare fix that. If you want to deploy, use wrangler. -->
+Bark-Worker is a [Bark](https://github.com/Finb/Bark) push notification backend on Cloudflare Workers. Send notifications to your iPhone through HTTP APIs or MCP without running a separate server.
 
-<!-- > [!NOTE]
-> Device token may change, the previous way to use multi-key or key alias may be unavailable, refer to [Tips](doc/tips.md) for more details. -->
-
-> [!NOTE]
-> KV Version will probably not support MCP due to limited quota, but if the MCP route can be optimized to some extent, there may have MCP support in KV version.
-
-> [!NOTE]
-> Batch Push has the highest priority, if `device_keys` is specified and not empty, `device_key` will be ignored, in both V1 and V2 APIs.
-
-<!-- > [!CAUTION]
-> For D1 Alpha Users: On August 1, 2024, D1 alpha databases will stop accepting live SQL queries. See [Migration Guide](https://developers.cloudflare.com/d1/platform/alpha-migration/) -->
-
-Bark-Worker is a [Bark-Server](https://github.com/Finb/bark-server) implenmention on Cloudflare Worker. It provides privacy-aware users with a cheap and private bark backend. 
+This repository is based on [cwxiaos/bark-worker](https://github.com/cwxiaos/bark-worker). It preserves the original Bark APIs and cloud MCP support, and adds one-time scheduled reminders, task listing, and cancellation. Thanks to the original author and the [Bark-Server](https://github.com/Finb/bark-server) project. This version remains licensed under [GPL-3.0](LICENSE).
 
 ### What is [Bark](https://github.com/Finb/Bark)?
 [Bark](https://github.com/Finb/Bark) is an iOS App which allows you to push customed notifications to your iPhone.
@@ -30,6 +17,7 @@ Bark-Worker is a [Bark-Server](https://github.com/Finb/bark-server) implenmentio
 > A domain is required if worker.dev is unavailable in your country/region
 
 ## Features
+
 - Full Bark-Server APIs support
     - `register`
     - `ping`
@@ -37,16 +25,16 @@ Bark-Worker is a [Bark-Server](https://github.com/Finb/bark-server) implenmentio
     - `info`
     - `push`
 - Path based parameters resolve
-- Cloud MCP with immediate/scheduled notifications, task listing and cancellation (D1 version). See [MCP guide](doc/mcp.md).
+- Cloud MCP (D1 version): `notify` sends or schedules notifications, `list_scheduled_notifications` lists tasks, and `cancel_scheduled_notification` cancels pending tasks
+- Persistent reminders in SQLite Durable Objects, triggered by Alarms; once saved, tasks can run after your computer shuts down or the MCP client disconnects
 - Easy to deploy, Cheap to use and Convenient to manage
+
+See the [MCP guide](doc/mcp.md) for connection details, parameters, and execution rules. Reminders are one-time only; recurring schedules are not supported. Sending and cancellation require an explicit user request.
 
 ## Setup
 
 > [!NOTE]
-> Select one, D1 or KV Version are both available. D1 Version is recommended for its higher usage than KV Version
-
-<!-- > [!CAUTION]
-> After Cloudflare D1 is not in Beta, KV Version maybe deprecated. -->
+> Choose the D1 version for cloud MCP and scheduled reminders: D1 stores device registrations and MCP sessions, while Durable Objects store and schedule reminders. The KV version provides Bark HTTP APIs only.
 
 ### Follow the instructions for D1 Version
 
@@ -54,6 +42,8 @@ Bark-Worker is a [Bark-Server](https://github.com/Finb/bark-server) implenmentio
 > The Cloudflare API Token must have D1 permission.
 
 [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/super3378/bark-worker)
+
+Configure the Worker Secrets `APNS_PRIVATE_KEY`, `APNS_TEAM_ID`, and `APNS_KEY_ID` during setup; see the [MCP deployment guide](doc/mcp.md). These are APNs server credentials, separate from your Bark device key.
 
 ### Or manually deploy
 
@@ -69,6 +59,7 @@ Create a Worker and a KV Storage, bind KV Storage to Worker with name `database`
 
 ## Tips
 
+- For batch pushes, a non-empty `device_keys` takes priority over `device_key`
 - Multi Device Key to one Device
 - Device Key Alias
 - D1 Database Manage in Console
