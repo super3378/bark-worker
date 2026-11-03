@@ -562,17 +562,13 @@ class Handler {
             }
 
             if (request.method !== 'POST') {
-                return new Response(JSON.stringify({
-                    'jsonrpc': '2.0',
-                    'id': null,
-                    'error': {
-                        'code': -32700,
-                        'message': 'Method not allowed',
-                    }
-                }), {
-                    status: 200,
+                // No standalone SSE stream is provided. MCP clients must receive
+                // 405 so they stop reconnecting instead of treating this as a stream.
+                return new Response('Method not allowed', {
+                    status: 405,
                     headers: {
-                        'content-type': 'application/json',
+                        'content-type': 'text/plain; charset=utf-8',
+                        'allow': 'POST, DELETE',
                     }
                 })
             }

@@ -53,6 +53,21 @@ test('Cloudflare runtime: MCP sessions, SQLite Durable Objects, alarms, isolatio
     let sessionA = await connect('/mcp/DeviceA')
     const sessionB = await connect('/mcp/DeviceB')
 
+    await t.test('unsupported MCP stream requests return 405 without affecting POST tools', async () => {
+        for (const path of ['/mcp', '/mcp/DeviceA']) {
+            for (const method of ['GET', 'PUT', 'HEAD']) {
+                const response = await mf.dispatchFetch('https://bark.test' + path, {
+                    method, headers: { accept: 'text/event-stream', 'mcp-session-id': sessionA },
+                })
+                assert.equal(response.status, 405)
+                assert.equal(response.headers.get('allow'), 'POST, DELETE')
+                await response.arrayBuffer()
+            }
+        }
+        assert.equal((await list(sessionA)).total, 0)
+        assert.equal(pushes.length, 0)
+    })
+
     await t.test('tool discovery and immediate sends use the original push pipeline', async () => {
         const { body } = await rpc('/mcp/DeviceA', sessionA, 'tools/list')
         assert.deepEqual(body.result.tools.map(tool => tool.name), ['notify', 'list_scheduled_notifications', 'cancel_scheduled_notification'])
