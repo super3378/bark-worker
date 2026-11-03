@@ -16,6 +16,14 @@
         }
     ],
     "keep_vars": true,
+    "durable_objects": {
+        "bindings": [
+            { "name": "REMINDERS", "class_name": "ReminderScheduler" }
+        ]
+    },
+    "migrations": [
+        { "tag": "v1-reminders", "new_sqlite_classes": ["ReminderScheduler"] }
+    ],
     "vars": {
         "ALLOW_NEW_DEVICE": "true",
         "ALLOW_QUERY_NUMS": "true",
