@@ -1,6 +1,8 @@
 # 云端 MCP
 
-D1 版支持通过 HTTP 连接 MCP，提供立即发送、一次性定时提醒、查看和取消任务。定时任务运行在 Cloudflare，电脑关机或客户端断开后仍可执行。
+本项目通过 Streamable HTTP 提供立即发送、一次性定时提醒、查看和取消任务。D1 保存设备注册、APNs 授权缓存和 MCP 会话，SQLite Durable Objects 单独保存定时任务并通过 Alarm 执行。电脑关机或客户端断开后，已保存的提醒仍可执行。
+
+让 Agent 协助接入的提示词见 [README 接入教程](../README.zh.md#接入本地-agent)，完整部署步骤见 [部署指南](setup_guide.zh.md)。
 
 ## 连接
 
@@ -52,7 +54,7 @@ Cloudflare 故障或维护可能造成延迟，不承诺严格准点。晚到不
 
 更新现有服务时，沿用原 Worker 名称、D1 数据库绑定、域名和变量。`wrangler.jsonc` 新增了 `REMINDERS` 绑定和 `v1-reminders` SQLite Durable Object migration，部署时一并创建，不需要 Windows 定时任务或额外服务器。保留 migration 记录，后续更新不要改名或删除。
 
-部署前，在 Worker 的 Variables and Secrets 中配置 `APNS_PRIVATE_KEY`、`APNS_TEAM_ID`、`APNS_KEY_ID` 三个 Secrets。它们是 APNs 服务端推送凭据，与 Bark 设备 Key 不同；升级时使用原服务对应的值。本版 D1/KV 源码均改为读取 Secrets，缺少配置时无法生成新的 APNs 认证令牌。本地开发可复制 `.dev.vars.example` 为 `.dev.vars` 后填写。
+全新部署当前版本时，需提供 `APNS_PRIVATE_KEY`、`APNS_TEAM_ID`、`APNS_KEY_ID` 三个 Secrets，可在一键部署页面按提示填写，或在 Worker 的 Variables and Secrets 中配置。已有服务已配置时无需重复设置。它们是与 Bark 客户端匹配的 APNs 服务端推送凭据，与设备 Key 不同，也不会由 Cloudflare 自动生成。服务缺少这些值时无法生成新的 APNs 认证令牌。本地开发可复制 `.dev.vars.example` 为 `.dev.vars` 后填写有效值。
 
 ```sh
 npm ci
@@ -63,4 +65,4 @@ npm run deploy
 
 `npm test` 使用本机模拟 D1、Durable Objects 和 APNs，不发送真实通知。`build:check` 仅打包检查。`deploy` 会执行原有 D1 migration 流程并更新线上服务；已配置 Workers Builds 时，推送部署分支可自动部署。部署完成后重载客户端 MCP。
 
-SQLite Durable Objects 支持 Workers 免费计划，使用量受其额度限制。KV 版不包含这些 MCP 功能。
+SQLite Durable Objects 支持 Workers 免费计划，使用量受其额度限制。

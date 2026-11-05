@@ -1,6 +1,8 @@
 # Cloud MCP
 
-The D1 Worker supports immediate notifications, one-time reminders, listing, and cancellation over Streamable HTTP. Reminders run on Cloudflare after clients disconnect.
+The service supports immediate notifications, one-time reminders, listing, and cancellation over Streamable HTTP. D1 stores device registrations, cached APNs authorization, and MCP sessions. SQLite-backed Durable Objects separately store reminders and execute them through Alarms, even after clients disconnect.
+
+Use the prompt in the [README connection tutorial](../README.md#connect-a-local-agent) to ask your Agent to configure the connection. See the [deployment guide](setup_guide.md) for complete setup steps.
 
 ## Connect
 
@@ -37,7 +39,7 @@ Alarms may be delayed by maintenance or failures. Pending tasks up to 30 minutes
 
 Preserve your existing Worker name, D1 binding, domain, and variables. Deploy the `REMINDERS` binding and `v1-reminders` SQLite migration from `wrangler.jsonc` together with the code. Keep that migration declaration on later updates. No extra server or local scheduler is needed.
 
-Before deploying, configure `APNS_PRIVATE_KEY` (PEM), `APNS_TEAM_ID`, and `APNS_KEY_ID` as Worker Secrets using the values for your existing APNs service. These are server-side APNs credentials, not Bark device keys. Both D1/KV sources now read credentials from Secrets; missing values prevent new APNs authorization tokens from being generated. For local development, copy `.dev.vars.example` to `.dev.vars` and fill it in.
+Fresh deployments of this version need `APNS_PRIVATE_KEY` (PEM), `APNS_TEAM_ID`, and `APNS_KEY_ID` as Worker Secrets. Enter them when prompted during one-click deployment, or in the Worker's Variables and Secrets settings. Existing services with these values configured do not need to enter them again. They are APNs server credentials matching the Bark client, not device keys, and Cloudflare does not generate them. Missing values prevent new APNs authorization tokens from being generated. For local development, copy `.dev.vars.example` to `.dev.vars` and enter valid values.
 
 ```sh
 npm ci
@@ -46,4 +48,4 @@ npm run build:check
 npm run deploy
 ```
 
-Tests run against local Cloudflare resources and mocked APNs without sending real notifications. The build check is a dry run. Deployment also runs the existing D1 migrations; Workers Builds can deploy automatically when the production branch is pushed. Reload MCP clients after deployment. SQLite Durable Objects are available on Workers Free, subject to its limits. The KV Worker does not expose these tools.
+Tests run against local Cloudflare resources and mocked APNs without sending real notifications. The build check is a dry run. Deployment also runs the existing D1 migrations; Workers Builds can deploy automatically when the production branch is pushed. Reload MCP clients after deployment. SQLite Durable Objects are available on Workers Free, subject to its limits.

@@ -1,122 +1,104 @@
 # 部署指南
 
-## 注册 Cloudflare 账户
+[返回 README](../README.zh.md)
 
-如果已有 Cloudflare 账号, 跳转至 [创建Worker](#创建-worker)
+当前版本需要完整源码、D1 和 SQLite Durable Objects。`main.js` 会导入其他模块，不能只将单个文件粘贴到 Worker 编辑器中部署。
 
-访问 Cloudflare 网址, 点击 Sign Up, 注册一个账号
+## 一键部署
 
-<p align="center">
-    <img src="images/setup/Screenshot from 2024-02-19 08-26-05.png">
-</p>
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/super3378/bark-worker)
 
-## 创建 Worker
+点击按钮后，按页面提示连接 GitHub 并创建 Worker。Cloudflare 会读取仓库的 `wrangler.jsonc`，自动创建所需的 D1 和 Durable Objects 并完成绑定，不需要先到控制台手工创建数据库。此行为见 [Cloudflare 一键部署说明](https://developers.cloudflare.com/workers/platform/deploy-buttons/)。部署完成后可核对：
 
-当注册或登陆后, 点击 `Workers & Pages` &rarr; `OverView` &rarr; `Create Worker`
+| 配置 | 要求 |
+| --- | --- |
+| Worker 入口 | `main.js`，同时部署仓库内的依赖模块 |
+| D1 | 绑定名 `database`，指向自己账户内的数据库 |
+| Durable Object | 绑定名 `REMINDERS`，类名 `ReminderScheduler` |
+| SQLite migration | 保留 `v1-reminders` 的 `new_sqlite_classes` 声明 |
+| APNs Secrets | `APNS_PRIVATE_KEY`、`APNS_TEAM_ID`、`APNS_KEY_ID` |
 
-<p align="center">
-    <img src="images/setup/Screenshot from 2024-02-19 08-28-35.png">
-</p>
-<p align="center">
-    <img src="images/setup/Screenshot from 2024-02-19 08-28-35.png">
-</p>
-<p align="center">
-    <img src="images/setup/Screenshot from 2024-02-19 08-28-50.png">
-</p>
+全新部署当前版本时，需要按部署页面提示提供三项有效 APNs Secrets；如果部署时没有填写，可在 Worker 的 Settings → Variables and Secrets 中补齐。已有服务配置过这三项时，更新代码无需重复填写。
 
-点击 `Deploy`
+原始导入版本曾将 APNs 凭据写在源码中，因此部署它时不需要手动配置；当前版本已改为从 Secrets 读取。Cloudflare 不会自动生成与 Bark 客户端匹配的 APNs 凭据，`.dev.vars.example` 中也只有名称和占位符，不能直接用作实际凭据。它们与手机设备 Key 不同。
 
-<p align="center">
-    <img src="images/setup/Screenshot from 2024-02-19 08-29-05.png">
-</p>
+确认部署成功、必要 Secrets 已配置后，继续下方“验证与注册”。
 
-点击 `Edit Code`
+## 手动部署
 
-<p align="center">
-    <img src="images/setup/Screenshot from 2024-02-19 08-29-29.png">
-</p>
+安装可运行本项目依赖的 Node.js LTS 和 Git，并准备 Cloudflare 账户。以下命令在克隆后的仓库目录内执行。
 
-从 [main.js](../main.js) 或 [main_kv.js](../main_kv.js) 复制代码并粘贴
+### 1. 获取源码并登录
 
-<p align="center">
-    <img src="images/setup/Screenshot from 2024-02-19 08-30-20.png">
-</p>
+```sh
+git clone https://github.com/super3378/bark-worker.git
+cd bark-worker
+npm ci
+npx wrangler login
+```
 
-如果是第一次部署且数据库中没有设备, 需要将 `isAllowNewDevice` 改为 `true` 以允许新设备注册
+### 2. 创建自己的 D1 数据库
 
-<p align="center">
-    <img src="images/setup/Screenshot from 2024-02-19 08-33-54.png">
-</p>
+首次部署可创建一个新数据库：
 
-点击 `Save`
+```sh
+npx wrangler d1 create bark-worker-db
+```
 
-<p align="center">
-    <img src="images/setup/Screenshot from 2024-02-19 08-30-29.png">
-</p>
+将命令返回的数据库名称和 ID 填入 `wrangler.jsonc` 的 `d1_databases`，绑定名保持为 `database`：
 
-## 创建数据库
+```jsonc
+// wrangler.jsonc 中的 d1_databases 字段
+"d1_databases": [
+  {
+    "binding": "database",
+    "database_name": "bark-worker-db",
+    "database_id": "YOUR_D1_DATABASE_ID"
+  }
+]
+```
 
-点击 `Workers & Pages` &rarr; `D1` 或 `KV` &rarr; `Create`
+不要直接沿用仓库里的数据库 ID。已有服务升级时使用原数据库，不要另建数据库覆盖绑定。
 
-<p align="center">
-    <img src="images/setup/Screenshot from 2024-02-19 08-31-34.png">
-</p>
+Durable Objects 的 `REMINDERS` 绑定和 `v1-reminders` migration 已在同一配置文件中声明，首次部署时由 Wrangler 创建对应资源，不需要再创建第二个 D1 数据库。可参考 [Cloudflare Durable Objects 文档](https://developers.cloudflare.com/durable-objects/get-started/)。
 
-选择一个名称并点击 `Save`
+### 3. 配置 APNs Secrets
 
-<p align="center">
-    <img src="images/setup/Screenshot from 2024-02-19 08-31-49.png">
-</p>
+已有 Worker 配置过三项 Secrets 时可跳过本步。全新部署需提供与 Bark 客户端匹配的有效 APNs 服务端凭据；先确认 `wrangler.jsonc` 中的 Worker `name` 是准备部署的名称，再执行以下交互式命令：
 
-## 绑定数据库
+```sh
+npx wrangler secret put APNS_PRIVATE_KEY
+npx wrangler secret put APNS_TEAM_ID
+npx wrangler secret put APNS_KEY_ID
+```
 
-点击 `Workers & Pages` &rarr; `OverView` &rarr; `刚才创建的Worker`
+`APNS_PRIVATE_KEY` 使用完整 PEM 私钥。也可以在 Cloudflare 控制台的 Worker Variables and Secrets 中设置。若命令要求先创建 Worker，请按提示创建相同名称的 Worker，或先完成一次部署再设置 Secrets。
 
-<p align="center">
-    <img src="images/setup/Screenshot from 2024-02-19 08-32-14.png">
-</p>
+### 4. 检查并部署
 
-点击 `Settings` &rarr; `Variables` 
+```sh
+npm test
+npm run build:check
+npm run deploy
+```
 
-根据代码版本点击 `D1 Database Bindings` 或 `KV Namesapce Bindings`
+测试使用本机模拟资源和 APNs，不发送真实通知。`build:check` 仅打包检查；`deploy` 会先执行远程 D1 migrations，再部署 Worker、Durable Object 代码和配置。
 
-点击 `Edit Variables` &rarr; `Add Binding`
+如果改为使用 Workers Builds 自动部署，构建与部署流程也应执行远程 D1 migrations；本项目的 `npm run deploy` 已包含该步骤。
 
-<p align="center">
-    <img src="images/setup/Screenshot from 2024-02-19 08-32-28.png">
-</p>
+## 验证与注册
 
-<p align="center">
-    <img src="images/setup/Screenshot from 2024-02-19 08-32-36.png">
-</p>
+1. 确认部署、D1 migrations 和三个 APNs Secrets 均已完成。
+2. 访问 `https://YOUR_HOST/ping` 检查服务是否响应。如果使用了 `ROOT_PATH`，地址需带上对应前缀。
+3. 在 iPhone 的 Bark App 中添加服务根地址，注册设备并取得设备 Key。注册时需允许新设备，变量 `ALLOW_NEW_DEVICE` 默认开启。
+4. 按 [README 的接入教程](../README.zh.md#接入本地-agent) 配置 MCP，先查询定时任务，再按需发送测试通知。
 
-选择数据库并将其命名为 `database`
+如启用 `BASIC_AUTH`，推送和 MCP 请求需携带相应 Basic 认证信息。网络无法访问 `workers.dev` 时，可为 Worker 绑定自定义域名。
 
-<p align="center">
-    <img src="images/setup/Screenshot from 2024-02-19 08-32-49.png">
-</p>
+## 更新已有服务
 
-点击 `Save`
+- 沿用原 Worker 名称、D1 数据库、域名和所需变量，保留现有 Secrets。
+- 保留 `REMINDERS` 绑定、`ReminderScheduler` 类名和已经部署的 migration 记录；随意改名或删除会影响已有任务。
+- 更新完整仓库后执行部署，再让 MCP 客户端重新加载工具定义。
 
-> [!CAUTION]
-> 名称必须为 `database`, 否则Worker会报错
-
-## 初始化数据库
-
-如果使用KV版本, 跳转至 [注册](#注册)
-
-把 `isAllowQueryNums` 修改为 `ture`, 使用 `/info` 发送请求
-
-<p align="center">
-    <img src="images/setup/Screenshot from 2024-02-19 08-34-28.png">
-</p>
-
-当返回中包含 `devices: 0`, 说明部署成功
-
-## 注册
-
-至此, 可以使用 Bark APP 或 浏览器等工具测试服务器
-
-<p align="center">
-    <img src="images/setup/Screenshot from 2024-02-19 08-35-13.png">
-</p>
+D1 保存设备信息、APNs 授权缓存和 MCP 会话；定时任务单独保存在 Durable Objects 自带的 SQLite 中，由 Alarm 触发。资源使用量受 Cloudflare 对应计划额度限制。
